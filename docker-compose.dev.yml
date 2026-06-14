@@ -1,0 +1,38 @@
+# Dev stack. Backend on :8000, frontend on :3000.
+# Secrets sourced from secrets/dev.env (gitignored).
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: wohnmobil-backend:dev
+    container_name: wohnmobil-backend-dev
+    restart: unless-stopped
+    env_file:
+      - secrets/dev.env
+    environment:
+      - ENV=dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ../frontend/my-app
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    image: wohnmobil-frontend:dev
+    container_name: wohnmobil-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy

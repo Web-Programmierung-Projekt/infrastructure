@@ -1,0 +1,38 @@
+# Test stack. Backend on :8001, frontend on :3001.
+# Coexists with dev (:8000/:3000) and prod (:8002/:3002) on the same VM.
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: wohnmobil-backend:test
+    container_name: wohnmobil-backend-test
+    restart: unless-stopped
+    env_file:
+      - secrets/test.env
+    environment:
+      - ENV=test
+    ports:
+      - "127.0.0.1:8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ../frontend/my-app
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8001
+    image: wohnmobil-frontend:test
+    container_name: wohnmobil-frontend-test
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      backend:
+        condition: service_healthy

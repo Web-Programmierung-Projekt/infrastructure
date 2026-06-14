@@ -1,0 +1,38 @@
+# Prod stack. Backend on :8002, frontend on :3002.
+# Reachable only over an SSH tunnel; the firewall blocks all inbound except :22.
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: wohnmobil-backend:prod
+    container_name: wohnmobil-backend-prod
+    restart: unless-stopped
+    env_file:
+      - secrets/prod.env
+    environment:
+      - ENV=prod
+    ports:
+      - "127.0.0.1:8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ../frontend/my-app
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8002
+    image: wohnmobil-frontend:prod
+    container_name: wohnmobil-frontend-prod
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3000"
+    depends_on:
+      backend:
+        condition: service_healthy

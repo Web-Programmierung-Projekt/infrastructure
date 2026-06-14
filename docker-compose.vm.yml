@@ -1,0 +1,11 @@
+# Overlay used on the VM. Replaces local builds with images pulled from GHCR.
+# The deploy script supplies BACKEND_IMAGE and FRONTEND_IMAGE.
+
+services:
+  backend:
+    build: !reset null
+    image: ${BACKEND_IMAGE}
+
+  frontend:
+    build: !reset null
+    image: ${FRONTEND_IMAGE}
