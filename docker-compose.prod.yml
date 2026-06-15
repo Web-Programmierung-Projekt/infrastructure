@@ -33,6 +33,8 @@ services:
     image: wohnmobil-frontend:prod
     container_name: wohnmobil-frontend-prod
     restart: unless-stopped
+    environment:
+      - API_URL=http://wohnmobil-backend-prod:8000
     ports:
       - "127.0.0.1:3002:3000"
     depends_on:
