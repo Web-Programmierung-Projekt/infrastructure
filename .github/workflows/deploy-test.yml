@@ -1,0 +1,26 @@
+name: Deploy Test
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy test stack to VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd ~/infrastructure
+            git pull origin main
+            GHCR_OWNER=web-programmierung-projekt \
+            GHCR_TAG=${{ github.sha }} \
+            ./deploy.sh test --vm
