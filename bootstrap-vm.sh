@@ -79,7 +79,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${PROXY_BIN} --address 127.0.0.1 --port 5432 ${CLOUDSQL_INSTANCE}
+ExecStart=${PROXY_BIN} --address 0.0.0.0 --port 5432 ${CLOUDSQL_INSTANCE}
 Restart=always
 RestartSec=5
 
