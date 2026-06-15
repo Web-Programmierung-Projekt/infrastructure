@@ -49,12 +49,12 @@ if [[ "$MODE" == "vm" ]]; then
     docker pull "$FRONTEND_IMAGE"
 
     BACKEND_IMAGE="$BACKEND_IMAGE" FRONTEND_IMAGE="$FRONTEND_IMAGE" \
-        docker compose -f "$COMPOSE_FILE" -f docker-compose.vm.yml up -d --remove-orphans
+        docker compose -p "wohnmobil-${ENV}" -f "$COMPOSE_FILE" -f docker-compose.vm.yml up -d --remove-orphans
 else
-    docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+    docker compose -p "wohnmobil-${ENV}" -f "$COMPOSE_FILE" up -d --build --remove-orphans
 fi
 
 echo "[deploy] running alembic migrations against ${ENV}"
-docker compose -f "$COMPOSE_FILE" exec -T backend alembic upgrade head
+docker compose -p "wohnmobil-${ENV}" -f "$COMPOSE_FILE" exec -T backend alembic upgrade head
 
-echo "[deploy] ${ENV} stack is up. Tail logs with: docker compose -f ${COMPOSE_FILE} logs -f"
+echo "[deploy] ${ENV} stack is up. Tail logs with: docker compose -p wohnmobil-${ENV} -f ${COMPOSE_FILE} logs -f"
