@@ -39,10 +39,14 @@ cd "$REPO_ROOT"
 if [[ "$MODE" == "vm" ]]; then
     # Pull images built by CI rather than building from a local source tree.
     : "${GHCR_OWNER:?GHCR_OWNER must be set, e.g. web-programmierung-projekt}"
-    : "${GHCR_TAG:=latest}"
+    # GHCR_TAG is the historical single-tag knob; the per-app vars take
+    # precedence so a partial deploy can pin one app while leaving the other
+    # at its current tag.
+    : "${GHCR_BACKEND_TAG:=${GHCR_TAG:-latest}}"
+    : "${GHCR_FRONTEND_TAG:=${GHCR_TAG:-latest}}"
 
-    BACKEND_IMAGE="ghcr.io/${GHCR_OWNER}/backend:${GHCR_TAG}"
-    FRONTEND_IMAGE="ghcr.io/${GHCR_OWNER}/frontend:${GHCR_TAG}"
+    BACKEND_IMAGE="ghcr.io/${GHCR_OWNER}/backend:${GHCR_BACKEND_TAG}"
+    FRONTEND_IMAGE="ghcr.io/${GHCR_OWNER}/frontend:${GHCR_FRONTEND_TAG}"
 
     echo "[deploy] pulling ${BACKEND_IMAGE} and ${FRONTEND_IMAGE}"
     docker pull "$BACKEND_IMAGE"

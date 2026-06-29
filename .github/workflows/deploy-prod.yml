@@ -1,11 +1,25 @@
 name: Deploy Prod
 
+# Prod is always manual — never auto-triggered from upstream pushes.
 on:
   workflow_dispatch:
     inputs:
+      app:
+        description: "Which app to deploy (backend | frontend | manual=re-deploy current)"
+        required: true
+        default: manual
+        type: choice
+        options:
+          - manual
+          - backend
+          - frontend
       sha:
-        description: "Image SHA to deploy (leave blank for latest main)"
+        description: "Image SHA (required for backend/frontend, ignored for manual)"
         required: false
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -22,8 +36,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd ~/infrastructure
             git pull origin main
-            GHCR_OWNER=web-programmierung-projekt \
-            GHCR_TAG=${{ github.event.inputs.sha || github.sha }} \
-            ./deploy.sh prod --vm
+            ./deploy-incremental.sh prod "${{ github.event.inputs.app }}" "${{ github.event.inputs.sha }}"

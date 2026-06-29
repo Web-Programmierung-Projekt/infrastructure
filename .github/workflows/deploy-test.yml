@@ -1,8 +1,31 @@
 name: Deploy Test
 
+# Triggered automatically when backend or frontend pushes a new image to GHCR
+# (their build.yml fires a repository_dispatch event with the commit SHA).
+# Can also be triggered manually for re-deploys / rollbacks.
 on:
-  push:
-    branches: [main]
+  repository_dispatch:
+    types: [backend-image-pushed, frontend-image-pushed]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Which app to deploy (backend | frontend | manual=re-deploy current)"
+        required: true
+        default: manual
+        type: choice
+        options:
+          - manual
+          - backend
+          - frontend
+      sha:
+        description: "Image SHA (required for backend/frontend, ignored for manual)"
+        required: false
+
+# Serialise concurrent test deploys so two PRs merging within seconds don't
+# race each other on the .deployed-tags.test file.
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -12,6 +35,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve deploy parameters
+        id: params
+        run: |
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            case "${{ github.event.action }}" in
+              backend-image-pushed)  echo "app=backend"  >> $GITHUB_OUTPUT ;;
+              frontend-image-pushed) echo "app=frontend" >> $GITHUB_OUTPUT ;;
+            esac
+            echo "sha=${{ github.event.client_payload.sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "app=${{ github.event.inputs.app }}" >> $GITHUB_OUTPUT
+            echo "sha=${{ github.event.inputs.sha }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Deploy test stack to VM
         uses: appleboy/ssh-action@v1
         with:
@@ -19,8 +56,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd ~/infrastructure
             git pull origin main
-            GHCR_OWNER=web-programmierung-projekt \
-            GHCR_TAG=${{ github.sha }} \
-            ./deploy.sh test --vm
+            ./deploy-incremental.sh test "${{ steps.params.outputs.app }}" "${{ steps.params.outputs.sha }}"
