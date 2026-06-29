@@ -29,14 +29,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy prod stack to VM
-        uses: appleboy/ssh-action@v1
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            set -euo pipefail
-            cd ~/infrastructure
-            git pull origin main
-            ./deploy-incremental.sh prod "${{ github.event.inputs.app }}" "${{ github.event.inputs.sha }}"
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy via IAP SSH tunnel
+        env:
+          APP: ${{ github.event.inputs.app }}
+          SHA: ${{ github.event.inputs.sha }}
+        run: |
+          # OS Login gives us a sa_… user; sudo -u deploy switches to the deploy
+          # user (passwordless via /etc/sudoers.d/99-deploy-as-sa).
+          gcloud compute ssh wohnmobil-vm \
+            --project global-phalanx-499518-n4 \
+            --zone europe-west3-a \
+            --tunnel-through-iap \
+            --command "sudo -u deploy bash -lc 'cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh prod \"$APP\" \"$SHA\"'"
