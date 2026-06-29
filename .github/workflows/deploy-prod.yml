@@ -53,4 +53,5 @@ jobs:
             --zone europe-west3-a \
             --tunnel-through-iap \
             --ssh-key-file=$HOME/.ssh/deploy_key \
+            --quiet \
             --command "cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh prod '$APP' '$SHA'"
