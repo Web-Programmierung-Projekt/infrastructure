@@ -62,19 +62,33 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          # Pre-trust the VM's host key by accepting on first connection.
+          # IAP terminates at a Google-internal IP, so we cannot pin the host
+          # fingerprint reliably across deploys — accept on first use is fine
+          # given the network path is already authenticated by IAP.
+          echo "StrictHostKeyChecking=accept-new" >> ~/.ssh/config
 
-      - name: Deploy via IAP SSH tunnel
+      - name: Deploy via IAP tunnel
         env:
           APP: ${{ steps.params.outputs.app }}
           SHA: ${{ steps.params.outputs.sha }}
         run: |
-          # IAP gives us the network path through Google's infra; the deploy
-          # user's SSH key (from secrets) gives us OS-level auth. OS Login is
-          # off on this VM so plain key auth is what works.
-          gcloud compute ssh deploy@wohnmobil-vm \
+          # Start an IAP tunnel forwarding the VM's port 22 to a local port,
+          # then SSH through it with the deploy user's key. This avoids
+          # gcloud's auto-managed SSH key files (which kept clashing with
+          # --ssh-key-file in CI).
+          gcloud compute start-iap-tunnel wohnmobil-vm 22 \
             --project global-phalanx-499518-n4 \
             --zone europe-west3-a \
-            --tunnel-through-iap \
-            --ssh-key-file=$HOME/.ssh/deploy_key \
-            --quiet \
-            --command "cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh test '$APP' '$SHA'"
+            --local-host-port=localhost:2222 &
+          TUNNEL_PID=$!
+          # Wait for the tunnel to be listening (max 30s).
+          for i in $(seq 1 30); do
+            nc -z localhost 2222 && break
+            sleep 1
+          done
+          ssh -i ~/.ssh/deploy_key -p 2222 deploy@localhost \
+            "cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh test '$APP' '$SHA'"
+          STATUS=$?
+          kill $TUNNEL_PID 2>/dev/null || true
+          exit $STATUS

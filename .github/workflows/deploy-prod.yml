@@ -42,16 +42,24 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          echo "StrictHostKeyChecking=accept-new" >> ~/.ssh/config
 
-      - name: Deploy via IAP SSH tunnel
+      - name: Deploy via IAP tunnel
         env:
           APP: ${{ github.event.inputs.app }}
           SHA: ${{ github.event.inputs.sha }}
         run: |
-          gcloud compute ssh deploy@wohnmobil-vm \
+          gcloud compute start-iap-tunnel wohnmobil-vm 22 \
             --project global-phalanx-499518-n4 \
             --zone europe-west3-a \
-            --tunnel-through-iap \
-            --ssh-key-file=$HOME/.ssh/deploy_key \
-            --quiet \
-            --command "cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh prod '$APP' '$SHA'"
+            --local-host-port=localhost:2222 &
+          TUNNEL_PID=$!
+          for i in $(seq 1 30); do
+            nc -z localhost 2222 && break
+            sleep 1
+          done
+          ssh -i ~/.ssh/deploy_key -p 2222 deploy@localhost \
+            "cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh prod '$APP' '$SHA'"
+          STATUS=$?
+          kill $TUNNEL_PID 2>/dev/null || true
+          exit $STATUS
