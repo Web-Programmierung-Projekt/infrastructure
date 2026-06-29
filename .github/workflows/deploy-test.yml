@@ -57,15 +57,23 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Write SSH key to disk
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
       - name: Deploy via IAP SSH tunnel
         env:
           APP: ${{ steps.params.outputs.app }}
           SHA: ${{ steps.params.outputs.sha }}
         run: |
-          # OS Login gives us a sa_… user; sudo -u deploy switches to the deploy
-          # user (passwordless via /etc/sudoers.d/99-deploy-as-sa).
-          gcloud compute ssh wohnmobil-vm \
+          # IAP gives us the network path through Google's infra; the deploy
+          # user's SSH key (from secrets) gives us OS-level auth. OS Login is
+          # off on this VM so plain key auth is what works.
+          gcloud compute ssh deploy@wohnmobil-vm \
             --project global-phalanx-499518-n4 \
             --zone europe-west3-a \
             --tunnel-through-iap \
-            --command "sudo -u deploy bash -lc 'cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh test \"$APP\" \"$SHA\"'"
+            --ssh-key-file=$HOME/.ssh/deploy_key \
+            --command "cd ~/infrastructure && git pull origin main && ./deploy-incremental.sh test '$APP' '$SHA'"
