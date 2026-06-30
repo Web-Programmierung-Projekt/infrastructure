@@ -119,13 +119,19 @@ fi
 for env in dev test prod; do
     secret_name="${env}-env"
     target="${REPO_ROOT}/secrets/${env}.env"
-    if gcloud secrets describe "$secret_name" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
-        gcloud secrets versions access latest --secret "$secret_name" --project "$GCP_PROJECT_ID" \
-            > "$target"
+    # Use `versions access` directly as the gate — the VM SA has
+    # secretAccessor (which grants .access) but typically not the broader
+    # .get permission that `secrets describe` requires. Fetch into a temp
+    # file so we never leave a truncated target on failure.
+    tmp=$(mktemp)
+    if gcloud secrets versions access latest --secret "$secret_name" --project "$GCP_PROJECT_ID" \
+            > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$target"
         chmod 600 "$target"
         log "  wrote ${target}"
     else
-        log "  WARNING: secret ${secret_name} not found in ${GCP_PROJECT_ID}; skipping ${target}"
+        rm -f "$tmp"
+        log "  WARNING: secret ${secret_name} not found or not accessible in ${GCP_PROJECT_ID}; skipping ${target}"
     fi
 done
 
@@ -143,9 +149,10 @@ for env in test prod; do
     # stays idempotent when run on a host whose env files were already
     # populated by an earlier bootstrap.
     sed -i '/^RESEND_API_KEY=/d; /^EMAIL_FROM=/d' "$target"
-    if gcloud secrets describe "resend-api-key" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
-        resend_key=$(gcloud secrets versions access latest --secret "resend-api-key" \
-            --project "$GCP_PROJECT_ID")
+    # Same `versions access` direct fetch as above. Captures into a local
+    # to avoid leaving a bare RESEND_API_KEY= line if the fetch fails.
+    if resend_key=$(gcloud secrets versions access latest --secret "resend-api-key" \
+            --project "$GCP_PROJECT_ID" 2>/dev/null); then
         {
             echo ""
             echo "# Transactional email — appended by bootstrap-vm.sh from Secret Manager"
