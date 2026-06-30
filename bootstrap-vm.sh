@@ -129,4 +129,34 @@ for env in dev test prod; do
     fi
 done
 
+# Append cross-environment secrets (currently just the Resend API key for
+# transactional email). They live as separate Secret Manager entries so a
+# rotation doesn't require regenerating an entire <env>-env blob.
+#
+# If the secret is missing, the backend treats RESEND_API_KEY as unset and
+# logs every send to stdout — see app/core/email.py.
+log "Appending cross-environment secrets"
+for env in test prod; do
+    target="${REPO_ROOT}/secrets/${env}.env"
+    [[ -f "$target" ]] || continue
+    # Strip any previous RESEND_API_KEY / EMAIL_FROM lines so this script
+    # stays idempotent when run on a host whose env files were already
+    # populated by an earlier bootstrap.
+    sed -i '/^RESEND_API_KEY=/d; /^EMAIL_FROM=/d' "$target"
+    if gcloud secrets describe "resend-api-key" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+        resend_key=$(gcloud secrets versions access latest --secret "resend-api-key" \
+            --project "$GCP_PROJECT_ID")
+        {
+            echo ""
+            echo "# Transactional email — appended by bootstrap-vm.sh from Secret Manager"
+            echo "RESEND_API_KEY=${resend_key}"
+            echo "EMAIL_FROM=Freiheit <onboarding@resend.dev>"
+        } >> "$target"
+        chmod 600 "$target"
+        log "  appended Resend config to ${target}"
+    else
+        log "  WARNING: resend-api-key not found in ${GCP_PROJECT_ID}; ${env} stays in stdout-only mode"
+    fi
+done
+
 log "Bootstrap complete."
