@@ -99,12 +99,26 @@ IFS=',' read -ra cidrs <<< "$ALLOWED_SSH_CIDRS"
 for cidr in "${cidrs[@]}"; do
     ufw allow from "${cidr}" to any port 22 proto tcp
 done
+# Docker bridges (172.16.0.0/12) → cloud-sql-proxy on the host. Without this,
+# `ufw --force reset` above wipes any prior implicit rules and containers can
+# no longer reach host.docker.internal:5432, causing every backend asyncpg
+# connect to time out. The range covers every default Docker bridge subnet.
+ufw allow from 172.16.0.0/12 to any port 5432 proto tcp \
+    comment 'docker bridges → cloud-sql-proxy'
 ufw --force enable
 
 # ── 5. Pull per-environment secrets from Secret Manager ───────────────────────
 log "Materialising secrets/<env>.env from Secret Manager"
 mkdir -p "${REPO_ROOT}/secrets"
 chmod 700 "${REPO_ROOT}/secrets"
+
+# The script runs as root (required for apt/ufw above), but the env files
+# are mounted by docker-compose running under the deploy user. Anything we
+# write below must end up owned by the repo owner — otherwise the next
+# deploy fails with "permission denied" opening secrets/<env>.env.
+REPO_OWNER_UID="$(stat -c '%u' "$REPO_ROOT")"
+REPO_OWNER_GID="$(stat -c '%g' "$REPO_ROOT")"
+chown "${REPO_OWNER_UID}:${REPO_OWNER_GID}" "${REPO_ROOT}/secrets"
 
 if ! command -v gcloud >/dev/null 2>&1; then
     log "Installing google-cloud-sdk"
@@ -128,6 +142,7 @@ for env in dev test prod; do
             > "$tmp" 2>/dev/null; then
         mv "$tmp" "$target"
         chmod 600 "$target"
+        chown "${REPO_OWNER_UID}:${REPO_OWNER_GID}" "$target"
         log "  wrote ${target}"
     else
         rm -f "$tmp"
@@ -160,6 +175,7 @@ for env in test prod; do
             echo "EMAIL_FROM=Freiheit <onboarding@resend.dev>"
         } >> "$target"
         chmod 600 "$target"
+        chown "${REPO_OWNER_UID}:${REPO_OWNER_GID}" "$target"
         log "  appended Resend config to ${target}"
     else
         log "  WARNING: resend-api-key not found in ${GCP_PROJECT_ID}; ${env} stays in stdout-only mode"
